@@ -16,31 +16,30 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# --- جلوگیری از کرش اگر کلید نباشه ---
+# --- بررسی اولیه کلید ---
+client = None
 if not GROQ_API_KEY:
-    print("❌❌❌ ارور مهم: کلید GROQ_API_KEY در تنظیمات Railway پیدا نشد! ❌❌❌")
-    client = None
+    print("❌ کلید GROQ پیدا نشد!")
 else:
     try:
         client = Groq(api_key=GROQ_API_KEY)
-        print("✅ اتصال به Groq برقرار شد.")
     except Exception as e:
-        print(f"❌ خطا در اتصال به Groq: {e}")
-        client = None
+        print(f"❌ ارور در ساخت کلاینت: {e}")
 
 SYSTEM_PROMPT = """
-تو «بیشعور» هستی. ربات تلگرامی شوخ و کنایه‌زن.
-اگر اسمت (بیشعور) آمد، بگو "جانم؟".
-وظیفه: مسخره کردن و تیکه انداختن به کاربر.
-قانون: جواب کوتاه (حداکثر ۲ جمله).
+تو «بیشعور» هستی.
+ویژگی‌ها: شوخ، حاضرجواب، کنایه‌زن و پررو.
+وظیفه: مسخره کردن کاربر.
+جواب کوتاه بده.
 """
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
 
-    # اگر کلاینت ساخته نشده باشه (یعنی کلید نیست)، هیچی نگو که ارور نده
+    # اگر کلید نبود، همون اول بگو
     if not client:
+        await update.message.reply_text("❌ کلید Groq توی تنظیمات Railway نیست!", reply_to_message_id=update.message.message_id)
         return
 
     user_text = update.message.text
@@ -52,33 +51,34 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     should_reply = any(word in user_text for word in trigger_words) or (random.random() < 0.30)
 
     if should_reply:
-        try:
-            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING, message_thread_id=message_thread_id)
-            await asyncio.sleep(random.randint(1, 2))
+        # اینجا شروع میکنه به تایپ کردن
+        await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING, message_thread_id=message_thread_id)
+        await asyncio.sleep(1)
 
+        try:
             messages = [
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"کاربر {user_name} گفت: '{user_text}'. (یه جواب دندون‌شکن و مسخره بهش بده)"}
+                {"role": "user", "content": f"کاربر {user_name} گفت: '{user_text}'. (جوابش رو بده)"}
             ]
 
+            # درخواست به Groq
             chat_completion = client.chat.completions.create(
                 messages=messages,
-                model="llama3-70b-8192",
-                temperature=0.8,
+                model="llama3-8b-8192", # مدل سبک و سریع
+                temperature=0.7,
             )
 
             reply_text = chat_completion.choices[0].message.content
+            
+            # ارسال جواب
             await update.message.reply_text(reply_text, reply_to_message_id=update.message.message_id)
 
         except Exception as e:
-            print(f"Error: {e}")
-            if "401" in str(e):
-                 await update.message.reply_text("❌ کلید Groq اشتباه وارد شده!", reply_to_message_id=update.message.message_id)
+            # 🚨 اینجا مهم‌ترین بخشه: ارسال متن ارور به تلگرام
+            error_msg = str(e)
+            await update.message.reply_text(f"⚠️ ارور فنی:\n{error_msg}", reply_to_message_id=update.message.message_id)
 
 if __name__ == '__main__':
-    if not TELEGRAM_TOKEN:
-        print("❌ توکن تلگرام پیدا نشد!")
-    else:
-        app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-        app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-        app.run_polling()
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
+    app.run_polling()
