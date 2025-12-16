@@ -6,7 +6,7 @@ from collections import defaultdict
 from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
-from groq import Groq
+from groq import Groq  # 👈 فقط همین کتابخونه مهمه
 
 # --- دریافت توکن‌ها ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -20,6 +20,7 @@ logging.basicConfig(
 client = None
 if GROQ_API_KEY:
     try:
+        # اتصال مستقیم به Groq
         client = Groq(api_key=GROQ_API_KEY)
     except Exception as e:
         print(f"❌ ارور کلاینت: {e}")
@@ -67,7 +68,7 @@ PROMPT_NORMAL_USER = f"""
 ممکن است در پیام‌های قبلی با «خدایان» صحبت کرده باشی.
 **فراموشش کن!**
 این کاربر یک **«فانی معمولی»** است.
-- اگر احترام بگذاری یا بگی "سرورم"، یعنی باختی.
+- احترام گذاشتن ممنوع.
 - با بی‌رحمی مسخره‌اش کن.
 
 ⚠️ قوانین:
@@ -88,8 +89,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
-    
-    # هندل کردن اسم (اگر اسم نداشت، بذار ناشناس)
     user_name = update.effective_user.first_name if update.effective_user.first_name else "ناشناس"
     
     # تعیین شخصیت
@@ -112,7 +111,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     trigger_words = ["بیشعور", "ربات", "احمق", "مپ", "گناه", "دعا", "جنگ", "هیولا", "تاس"]
     
     is_triggered_by_word = any(word in user_text for word in trigger_words)
-    random_chance = 0.05 # شانس ۵ درصد
+    random_chance = 0.05 
 
     should_reply = is_triggered_by_word or is_reply_to_bot or (random.random() < random_chance)
 
@@ -141,10 +140,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             messages_to_send = [{"role": "system", "content": current_system_prompt}] + chat_context[chat_id]
 
-            # 👇 استفاده از مدل پایدار و سبک Groq 👇
+            # استفاده از مدل Groq
             chat_completion = client.chat.completions.create(
                 messages=messages_to_send,
-                model="llama-3.1-8b-instant",  # این مدل بسیار کم‌مصرف و سریع است
+                model="llama-3.1-8b-instant",  # مدل سبک
                 temperature=0.6,
                 top_p=0.9,
                 max_tokens=150,
@@ -158,7 +157,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             error_msg = str(e)
             if "429" in error_msg:
-                 await update.message.reply_text("😵‍💫 لیمیت پر شد! (یه نفس بگیرم برمی‌گردم)", reply_to_message_id=update.message.message_id)
+                 await update.message.reply_text("😵‍💫 لیمیت پر شد!", reply_to_message_id=update.message.message_id)
             else:
                  await update.message.reply_text(f"⚠️ ارور فنی:\n{error_msg}", reply_to_message_id=update.message.message_id)
 
