@@ -2,81 +2,33 @@ import os
 import logging
 import random
 import asyncio
-import requests
-import json
 from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
+from groq import Groq
 
 # --- دریافت توکن‌ها ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 
-chat_histories = {}
+# اتصال به Groq
+client = Groq(api_key=GROQ_API_KEY)
 
 # --- شخصیت ربات ---
 SYSTEM_PROMPT = """
-تو «بیشعور» هستی. یک ربات تلگرامی که شخصیت دارد.
+تو «بیشعور» هستی. یک ربات تلگرامی با شخصیت خاص.
 ویژگی‌ها: شوخ، حاضرجواب، کنایه‌زن، کمی بی‌ادب و پررو.
-اگر کسی اسمت را صدا زد (بیشعور)، بگو "جانم؟" یا "ها؟".
 وظیفه: کاربرها را مسخره کن و به حرف‌هایشان تیکه بنداز.
+اگر کسی اسمت را صدا زد (بیشعور)، بگو "جانم؟" یا "ها؟".
 قانون: جواب‌هایت حتماً کوتاه (یک یا دو جمله) باشد.
 """
 
-# --- تابع مستقیم اتصال به گوگل (بدون کتابخونه) ---
-def ask_gemini_direct(prompt, history=[]):
-    # آدرس مستقیم مدل فلش (سریع و جدید)
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-    
-    # ساختن ساختار پیام برای گوگل
-    contents = []
-    # اول شخصیت ربات رو میفرستیم
-    contents.append({
-        "role": "user",
-        "parts": [{"text": SYSTEM_PROMPT}]
-    })
-    contents.append({
-        "role": "model",
-        "parts": [{"text": "باشه، فهمیدم. من بیشعور هستم. بگو ببینم چی میگن."}]
-    })
-    
-    # اضافه کردن تاریخچه چت (اختیاری)
-    # فعلا فقط پیام جدید رو میفرستیم که ارور کمتر بشه
-    contents.append({
-        "role": "user",
-        "parts": [{"text": prompt}]
-    })
-
-    payload = {
-        "contents": contents,
-        "safetySettings": [
-            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
-        ]
-    }
-
-    try:
-        response = requests.post(url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload))
-        
-        if response.status_code == 200:
-            result = response.json()
-            # استخراج متن از جواب پیچیده گوگل
-            try:
-                return result['candidates'][0]['content']['parts'][0]['text']
-            except:
-                return "چی گفتی؟ نفهمیدم. (ارور عجیب)"
-        else:
-            return f"گوگل قهر کرده! (کد خطا: {response.status_code})\n{response.text}"
-            
-    except Exception as e:
-        return f"سیم‌هام قاطی کرد: {str(e)}"
+chat_histories = {}
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
@@ -93,20 +45,36 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     should_reply = any(word in user_text for word in trigger_words) or (random.random() < 0.30)
 
     if should_reply:
-        # اکشن تایپینگ
-        await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING, message_thread_id=message_thread_id)
-        
-        # یکم مکث که طبیعی بشه
-        await asyncio.sleep(random.randint(1, 3))
+        try:
+            # اکشن تایپینگ
+            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING, message_thread_id=message_thread_id)
+            await asyncio.sleep(random.randint(1, 2))
 
-        # ساخت متن ورودی
-        final_prompt = f"کاربر {user_name} گفت: '{user_text}'. \n(یه جواب دندون‌شکن و مسخره بهش بده)"
-        
-        # دریافت جواب
-        reply_text = ask_gemini_direct(final_prompt)
-        
-        # ارسال
-        await update.message.reply_text(reply_text, reply_to_message_id=update.message.message_id)
+            # آماده‌سازی پیام برای Groq (Llama 3)
+            messages = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": f"کاربر {user_name} گفت: '{user_text}'. (یه جواب دندون‌شکن و مسخره بهش بده)"}
+            ]
+
+            # درخواست به سرور
+            chat_completion = client.chat.completions.create(
+                messages=messages,
+                model="llama3-70b-8192", # مدل قدرتمند و سریع
+                temperature=0.8, # خلاقیت بالا
+            )
+
+            reply_text = chat_completion.choices[0].message.content
+
+            # ارسال جواب
+            await update.message.reply_text(reply_text, reply_to_message_id=update.message.message_id)
+
+        except Exception as e:
+            error_msg = str(e)
+            print(f"Error: {error_msg}")
+            # فقط اگر خیلی واجب بود ارور رو بفرست، وگرنه ساکت بمون
+            if "401" in error_msg:
+                await update.message.reply_text("❌ کلید Groq اشتباهه!", reply_to_message_id=update.message.message_id)
+            # در بقیه موارد هیچی نگو که ضایع نشه
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
