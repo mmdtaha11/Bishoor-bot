@@ -144,7 +144,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # 👇 استفاده از مدل پایدار و سبک Groq 👇
             chat_completion = client.chat.completions.create(
                 messages=messages_to_send,
-                model="llama-3.1-8b-instant",  # این مدل decommission نشده و بسیار سریع است
+                model="llama-3.1-8b-instant",  # این مدل بسیار کم‌مصرف و سریع است
                 temperature=0.6,
                 top_p=0.9,
                 max_tokens=150,
