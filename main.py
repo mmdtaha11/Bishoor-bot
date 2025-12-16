@@ -37,7 +37,6 @@ WORLD_LORE = """
 # 🎭 سه شخصیت متفاوت
 # ==========================================
 
-# 1. خدای تاریکی (ترس)
 PROMPT_DARK_GOD = f"""
 تو «برده‌ی حقیر» در برابر «خدای تاریکی» هستی.
 {WORLD_LORE}
@@ -49,7 +48,6 @@ PROMPT_DARK_GOD = f"""
 زبان: فارسی.
 """
 
-# 2. خدای نور (عشق)
 PROMPT_LIGHT_GOD = f"""
 تو «مرید عاشق» در برابر «خدای نور» هستی.
 {WORLD_LORE}
@@ -61,21 +59,19 @@ PROMPT_LIGHT_GOD = f"""
 زبان: فارسی.
 """
 
-# 3. کاربر معمولی (بیشعور) - اصلاح شده برای جلوگیری از چاپلوسی اشتباهی
 PROMPT_NORMAL_USER = f"""
 تو «بیشعور» هستی. روح باستانی نیش‌دار.
 {WORLD_LORE}
 
-⛔️ **هشدار بسیار مهم (CONTEXT WARNING):**
-ممکن است در پیام‌های قبلی (تاریخچه) با «خدایان» صحبت کرده باشی و احترام گذاشته باشی.
+⛔️ **هشدار (CONTEXT WARNING):**
+ممکن است در پیام‌های قبلی با «خدایان» صحبت کرده باشی.
 **فراموشش کن!**
-کاربری که الان دارد حرف می‌زند یک **«موجود فانی و معمولی»** است.
+این کاربر یک **«فانی معمولی»** است.
 - اگر احترام بگذاری یا بگی "سرورم"، یعنی باختی.
-- با بی‌رحمی تمام مسخره‌اش کن.
-- اصلاً مهم نیست قبلاً چی گفتی، الان باید نیش‌دار باشی.
+- با بی‌رحمی مسخره‌اش کن.
 
 ⚠️ قوانین:
-1. کاربرها را مسخره کن.
+1. مسخره کن.
 2. فقط اگر لازم شد از اسم مناطق استفاده کن.
 3. جواب کوتاه بده.
 زبان: فارسی عامیانه.
@@ -92,7 +88,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
-    user_name = update.effective_user.first_name
+    
+    # هندل کردن اسم (اگر اسم نداشت، بذار ناشناس)
+    user_name = update.effective_user.first_name if update.effective_user.first_name else "ناشناس"
     
     # تعیین شخصیت
     if user_id == 5107444649:
@@ -113,9 +111,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     trigger_words = ["بیشعور", "ربات", "احمق", "مپ", "گناه", "دعا", "جنگ", "هیولا", "تاس"]
     
-    # --- حساسیت ۵ درصد برای همه ---
     is_triggered_by_word = any(word in user_text for word in trigger_words)
-    random_chance = 0.05
+    random_chance = 0.05 # شانس ۵ درصد برای همه
 
     should_reply = is_triggered_by_word or is_reply_to_bot or (random.random() < random_chance)
 
@@ -128,7 +125,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if "بیشعور" in user_text and role_description == "BISHOOR_MODE":
                 context_note = "(داره اسمت رو صدا میزنه)"
             
-            # تعیین اسم نمایشی برای اینکه هوش مصنوعی گیج نشه
             display_name = user_name
             if role_description == "SLAVE_MODE":
                 display_name = "ARBAB_TARIKI (خدای تاریکی)"
@@ -159,7 +155,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(reply_text, reply_to_message_id=update.message.message_id)
 
         except Exception as e:
-            print(e)
+            # 🚨 نمایش ارور برای دیباگ
+            error_msg = str(e)
+            print(f"ERROR: {error_msg}")
+            await update.message.reply_text(f"⚠️ ارور فنی:\n{error_msg}", reply_to_message_id=update.message.message_id)
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
