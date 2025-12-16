@@ -130,4 +130,42 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             # مدیریت حافظه
             context_note = ""
-            if "بیشعور" in user_text and
+            if "بیشعور" in user_text and not god_talking:
+                context_note = "(داره اسمت رو صدا میزنه)"
+            
+            # برای خدایان، اسم کاربر رو با لقب میفرستیم که هوش مصنوعی قاطی نکنه
+            display_name = user_name
+            if role_description == "SLAVE_MODE":
+                display_name = "ARBAB_TARIKI (خدای تاریکی)"
+            elif role_description == "WORSHIP_MODE":
+                display_name = "HAZRAT_NOOR (خدای نور)"
+
+            user_message_formatted = f"{display_name}: {user_text} {context_note}"
+            chat_context[chat_id].append({"role": "user", "content": user_message_formatted})
+
+            if len(chat_context[chat_id]) > 6:
+                chat_context[chat_id] = chat_context[chat_id][-6:]
+
+            # ارسال پرامپت انتخاب شده + تاریخچه
+            messages_to_send = [{"role": "system", "content": current_system_prompt}] + chat_context[chat_id]
+
+            chat_completion = client.chat.completions.create(
+                messages=messages_to_send,
+                model="llama-3.3-70b-versatile", 
+                temperature=0.7, 
+                top_p=0.9,
+                max_tokens=150,
+            )
+
+            reply_text = chat_completion.choices[0].message.content
+            chat_context[chat_id].append({"role": "assistant", "content": reply_text})
+
+            await update.message.reply_text(reply_text, reply_to_message_id=update.message.message_id)
+
+        except Exception as e:
+            print(e)
+
+if __name__ == '__main__':
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
+    app.run_polling()
