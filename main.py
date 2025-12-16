@@ -2,11 +2,11 @@ import os
 import logging
 import random
 import asyncio
+import requests
+import json
 from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
-import google.generativeai as genai
-from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 # --- دریافت توکن‌ها ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -17,50 +17,66 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-genai.configure(api_key=GEMINI_API_KEY)
-
-# --- تنظیمات ضد سانسور ---
-safety_settings = {
-    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-}
-
-# --- تابعی برای پیدا کردن مدل سالم ---
-def get_working_model():
-    try:
-        # اول سعی میکنیم لیست مدل‌های موجود برای این کلید رو بگیریم
-        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        print(f"Available models: {available_models}")
-        
-        # اولویت با مدل‌های جدیدتر است
-        priority_list = ['models/gemini-1.5-flash', 'models/gemini-1.5-pro', 'models/gemini-pro', 'models/gemini-1.0-pro']
-        
-        for model_name in priority_list:
-            if model_name in available_models:
-                print(f"✅ Selected Model: {model_name}")
-                return genai.GenerativeModel(model_name, safety_settings=safety_settings)
-        
-        # اگر هیچکدوم توی لیست نبود، شانسی gemini-pro رو انتخاب میکنیم
-        return genai.GenerativeModel('gemini-pro', safety_settings=safety_settings)
-    except Exception as e:
-        print(f"Error listing models: {e}")
-        # حالت اضطراری
-        return genai.GenerativeModel('gemini-pro', safety_settings=safety_settings)
-
-# انتخاب مدل
-model = get_working_model()
-
 chat_histories = {}
 
-# دستورالعمل سیستم (اگر مدل ساپورت نکنه، توی پیام میفرستیم)
-ROASTER_SYS_PROMPT = """
-تو شخصیتی به نام «بیشعور» هستی.
-ویژگی‌ها: شوخ، حاضرجواب، کنایه‌زن و کمی بی‌ادب.
-نکته: اگر کسی گفت "بیشعور"، بگو "جانم؟".
-قانون: جملات کوتاه (زیر ۲۰ کلمه) بگو.
+# --- شخصیت ربات ---
+SYSTEM_PROMPT = """
+تو «بیشعور» هستی. یک ربات تلگرامی که شخصیت دارد.
+ویژگی‌ها: شوخ، حاضرجواب، کنایه‌زن، کمی بی‌ادب و پررو.
+اگر کسی اسمت را صدا زد (بیشعور)، بگو "جانم؟" یا "ها؟".
+وظیفه: کاربرها را مسخره کن و به حرف‌هایشان تیکه بنداز.
+قانون: جواب‌هایت حتماً کوتاه (یک یا دو جمله) باشد.
 """
+
+# --- تابع مستقیم اتصال به گوگل (بدون کتابخونه) ---
+def ask_gemini_direct(prompt, history=[]):
+    # آدرس مستقیم مدل فلش (سریع و جدید)
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    
+    # ساختن ساختار پیام برای گوگل
+    contents = []
+    # اول شخصیت ربات رو میفرستیم
+    contents.append({
+        "role": "user",
+        "parts": [{"text": SYSTEM_PROMPT}]
+    })
+    contents.append({
+        "role": "model",
+        "parts": [{"text": "باشه، فهمیدم. من بیشعور هستم. بگو ببینم چی میگن."}]
+    })
+    
+    # اضافه کردن تاریخچه چت (اختیاری)
+    # فعلا فقط پیام جدید رو میفرستیم که ارور کمتر بشه
+    contents.append({
+        "role": "user",
+        "parts": [{"text": prompt}]
+    })
+
+    payload = {
+        "contents": contents,
+        "safetySettings": [
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+        ]
+    }
+
+    try:
+        response = requests.post(url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload))
+        
+        if response.status_code == 200:
+            result = response.json()
+            # استخراج متن از جواب پیچیده گوگل
+            try:
+                return result['candidates'][0]['content']['parts'][0]['text']
+            except:
+                return "چی گفتی؟ نفهمیدم. (ارور عجیب)"
+        else:
+            return f"گوگل قهر کرده! (کد خطا: {response.status_code})\n{response.text}"
+            
+    except Exception as e:
+        return f"سیم‌هام قاطی کرد: {str(e)}"
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
@@ -69,37 +85,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     chat_id = update.effective_chat.id
     message_thread_id = update.message.message_thread_id
+    user_name = update.effective_user.first_name
 
     trigger_words = ["بیشعور", "ربات", "احمق", "خر", "نفهم", "بات", "چرا", "ساکت", "مشکل"]
-    should_reply = any(word in user_text for word in trigger_words) or (random.random() < 0.25)
+    
+    # شانس ۳۰ درصدی یا صدا زدن اسم
+    should_reply = any(word in user_text for word in trigger_words) or (random.random() < 0.30)
 
     if should_reply:
-        try:
-            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING, message_thread_id=message_thread_id)
-            await asyncio.sleep(1)
+        # اکشن تایپینگ
+        await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING, message_thread_id=message_thread_id)
+        
+        # یکم مکث که طبیعی بشه
+        await asyncio.sleep(random.randint(1, 3))
 
-            if chat_id not in chat_histories:
-                chat_histories[chat_id] = model.start_chat(history=[])
-            
-            chat_session = chat_histories[chat_id]
-            
-            # ارسال دستورالعمل همراه با پیام (برای محکم کاری)
-            full_prompt = f"{ROASTER_SYS_PROMPT}\n\nکاربر گفت: {user_text}\n(جواب بده:)"
-            
-            response = await chat_session.send_message_async(full_prompt)
-            
-            if response.text:
-                await update.message.reply_text(response.text, reply_to_message_id=update.message.message_id)
-            else:
-                await update.message.reply_text("...", reply_to_message_id=update.message.message_id)
-
-        except Exception as e:
-            # اگر باز هم ارور داد، دقیقاً میگه چه مدل‌هایی در دسترسه
-            error_msg = str(e)
-            if "404" in error_msg:
-                 await update.message.reply_text("❌ کلید جدید هم مدل‌ها رو پیدا نکرد. لیست مدل‌ها خالیه!", reply_to_message_id=update.message.message_id)
-            else:
-                 await update.message.reply_text(f"⚠️ ارور: {error_msg}", reply_to_message_id=update.message.message_id)
+        # ساخت متن ورودی
+        final_prompt = f"کاربر {user_name} گفت: '{user_text}'. \n(یه جواب دندون‌شکن و مسخره بهش بده)"
+        
+        # دریافت جواب
+        reply_text = ask_gemini_direct(final_prompt)
+        
+        # ارسال
+        await update.message.reply_text(reply_text, reply_to_message_id=update.message.message_id)
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
