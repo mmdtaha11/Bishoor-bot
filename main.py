@@ -34,7 +34,7 @@ WORLD_LORE = """
 """
 
 # ==========================================
-# 🎭 سه شخصیت متفاوت (Persona Swapping)
+# 🎭 سه شخصیت متفاوت
 # ==========================================
 
 # 1. خدای تاریکی (ترس)
@@ -104,15 +104,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     trigger_words = ["بیشعور", "ربات", "احمق", "مپ", "گناه", "دعا", "جنگ", "هیولا", "تاس"]
     
-    # --- تنظیم حساسیت (Probability) ---
+    # --- تنظیم حساسیت (همه ۵ درصد) ---
     is_triggered_by_word = any(word in user_text for word in trigger_words)
     
-    if role_description != "BISHOOR_MODE":
-        # ✅ برای خدایان: ۳۰ درصد شانس (طبق درخواست جدید)
-        random_chance = 0.30
-    else:
-        # برای بقیه: ۵ درصد شانس (ساکت و موقر)
-        random_chance = 0.05
+    # اینجا تغییر کرد: برای همه (چه خدا چه بنده) شد ۵ درصد
+    random_chance = 0.05
 
     should_reply = is_triggered_by_word or is_reply_to_bot or (random.random() < random_chance)
 
