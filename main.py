@@ -6,11 +6,11 @@ from collections import defaultdict
 from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
-from openai import OpenAI # کتابخانه استاندارد
+from groq import Groq
 
 # --- دریافت توکن‌ها ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -18,13 +18,9 @@ logging.basicConfig(
 )
 
 client = None
-if OPENROUTER_API_KEY:
+if GROQ_API_KEY:
     try:
-        # اتصال به سرور OpenRouter
-        client = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=OPENROUTER_API_KEY,
-        )
+        client = Groq(api_key=GROQ_API_KEY)
     except Exception as e:
         print(f"❌ ارور کلاینت: {e}")
 
@@ -86,12 +82,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not client:
-        await update.message.reply_text("❌ کلید OpenRouter نیست!", reply_to_message_id=update.message.message_id)
+        await update.message.reply_text("❌ کلید Groq نیست!", reply_to_message_id=update.message.message_id)
         return
 
     user_text = update.message.text
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
+    
+    # هندل کردن اسم (اگر اسم نداشت، بذار ناشناس)
     user_name = update.effective_user.first_name if update.effective_user.first_name else "ناشناس"
     
     # تعیین شخصیت
@@ -114,7 +112,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     trigger_words = ["بیشعور", "ربات", "احمق", "مپ", "گناه", "دعا", "جنگ", "هیولا", "تاس"]
     
     is_triggered_by_word = any(word in user_text for word in trigger_words)
-    random_chance = 0.05
+    random_chance = 0.05 # شانس ۵ درصد
 
     should_reply = is_triggered_by_word or is_reply_to_bot or (random.random() < random_chance)
 
@@ -143,18 +141,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             messages_to_send = [{"role": "system", "content": current_system_prompt}] + chat_context[chat_id]
 
-            # 👇 استفاده از مدل کاملاً رایگان OpenRouter 👇
+            # 👇 استفاده از مدل پایدار و سبک Groq 👇
             chat_completion = client.chat.completions.create(
                 messages=messages_to_send,
-                model="meta-llama/llama-3-8b-instruct:free", # مدل رایگان
-                temperature=0.7,
+                model="llama-3.1-8b-instant",  # این مدل decommission نشده و بسیار سریع است
+                temperature=0.6,
                 top_p=0.9,
                 max_tokens=150,
-                # این دو خط برای تنظیمات اوپن‌روتر لازمه:
-                extra_headers={
-                    "HTTP-Referer": "https://telegram.org", 
-                    "X-Title": "RPG Bot",
-                },
             )
 
             reply_text = chat_completion.choices[0].message.content
@@ -164,7 +157,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         except Exception as e:
             error_msg = str(e)
-            await update.message.reply_text(f"⚠️ ارور فنی:\n{error_msg}", reply_to_message_id=update.message.message_id)
+            if "429" in error_msg:
+                 await update.message.reply_text("😵‍💫 لیمیت پر شد! (یه نفس بگیرم برمی‌گردم)", reply_to_message_id=update.message.message_id)
+            else:
+                 await update.message.reply_text(f"⚠️ ارور فنی:\n{error_msg}", reply_to_message_id=update.message.message_id)
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
