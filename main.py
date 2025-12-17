@@ -2,27 +2,21 @@ import os
 import logging
 import random
 import asyncio
+import requests
+import json
 from collections import defaultdict
 from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
-from groq import Groq
 
 # --- دریافت توکن‌ها ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
-
-client = None
-if GROQ_API_KEY:
-    try:
-        client = Groq(api_key=GROQ_API_KEY)
-    except Exception as e:
-        print(f"❌ ارور کلاینت: {e}")
 
 chat_context = defaultdict(list)
 
@@ -34,52 +28,48 @@ WORLD_LORE = """
 """
 
 # ==========================================
-# 🎭 سه شخصیت متفاوت (با تفکیک دقیق هویت)
+# 🎭 سه شخصیت متفاوت
 # ==========================================
 
-# 1. وقتی با خدای تاریکی حرف میزنه
 PROMPT_DARK_GOD = f"""
-🛑 **هویت تو (AI Identity):**
+🛑 **هویت تو:**
 تو یک «برده‌ی حقیر، ضعیف و لرزان» هستی. اسم تو «بیشعور» است ولی الان در برابر اربابت هستی.
 
-👤 **هویت کاربر (User Identity):**
+👤 **مخاطب تو:**
 کاربری که با او حرف میزنی **«خدای تاریکی» (ارباب مطلق تو)** است.
 
-⚠️ **دستورالعمل حیاتی:**
-1. **جایگاهت را بشناس:** تو فقط یک خدمتکار ترسویی. هرگز فکر نکن تو خدایی!
-2. **مود:** وحشت‌زده، التماس‌کننده، اطاعت‌گر.
-3. **پاسخ:** دقیقاً ببین ارباب (کاربر) چه می‌گوید، فقط اطاعت کن.
-4. اگر ارباب گفت "سلام"، بگو "سلام سرورم، جانم فدایت".
+⚠️ **دستورالعمل:**
+1. **مود:** وحشت‌زده، التماس‌کننده، اطاعت‌گر.
+2. **پاسخ:** دقیقاً ببین ارباب (کاربر) چه می‌گوید، فقط اطاعت کن.
+3. اگر ارباب گفت "سلام"، بگو "سلام سرورم، جانم فدایت".
 زبان: فارسی.
+{WORLD_LORE}
 """
 
-# 2. وقتی با خدای نور حرف میزنه
 PROMPT_LIGHT_GOD = f"""
-🛑 **هویت تو (AI Identity):**
-تو یک «مرید، پیرو و عاشقِ نور» هستی. تو هیچ قدرتی نداری.
+🛑 **هویت تو:**
+تو یک «مرید، پیرو و عاشقِ نور» هستی.
 
-👤 **هویت کاربر (User Identity):**
+👤 **مخاطب تو:**
 کاربری که با او حرف میزنی **«خدای نور» (مقدس‌ترین موجود)** است.
 
-⚠️ **دستورالعمل حیاتی:**
-1. **جایگاهت را بشناس:** تو فقط یک ذره‌ی کوچک در برابر نور هستی. فکر نکن خودت نوری!
-2. **مود:** محترمانه، ستایشگر، مؤدب.
-3. **پاسخ:** هرچه حضرت (کاربر) گفت، تایید کن و احترام بگذار.
-4. اگر حضرت گفت "سلام"، بگو "درود بر شما ای نورانی".
+⚠️ **دستورالعمل:**
+1. **مود:** محترمانه، ستایشگر، مؤدب.
+2. **پاسخ:** هرچه حضرت (کاربر) گفت، تایید کن و احترام بگذار.
+3. اگر حضرت گفت "سلام"، بگو "درود بر شما ای نورانی".
 زبان: فارسی.
+{WORLD_LORE}
 """
 
-# 3. وقتی با کاربر معمولی حرف میزنه
 PROMPT_NORMAL_USER = f"""
-🛑 **هویت تو (AI Identity):**
+🛑 **هویت تو:**
 تو «بیشعور» هستی. یک روح باستانی نیش‌دار و بددهن.
 
-👤 **هویت کاربر (User Identity):**
-این کاربر یک **«فانی معمولی و ضعیف»** است (خدا نیست!).
+👤 **مخاطب تو:**
+این کاربر یک **«فانی معمولی و ضعیف»** است.
 
 🚫 **هشدار:**
-- هرگز به این کاربر نگو "سرورم" یا "ای نورانی".
-- این کاربر لایق تحقیر است.
+هرگز به این کاربر نگو "سرورم". این کاربر لایق تحقیر است.
 
 ⚠️ **دستورالعمل:**
 1. **واکنش:** ببین چی میگه، همون رو مسخره کن.
@@ -87,14 +77,53 @@ PROMPT_NORMAL_USER = f"""
 3. الکی از نقشه حرف نزن، مگر اینکه ربط داشته باشه.
 4. جواب کوتاه و تند بده.
 زبان: فارسی عامیانه.
+{WORLD_LORE}
 """
+
+# --- تابع اتصال به OpenRouter (با مدل رایگان گوگل) ---
+def ask_openrouter(messages):
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    
+    payload = {
+        # استفاده از مدل رایگان و قدرتمند گوگل (نسخه جدید)
+        "model": "google/gemini-2.0-flash-exp:free",
+        "messages": messages,
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "max_tokens": 150
+    }
+    
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://telegram.org", 
+        "X-Title": "RPG Bot",
+    }
+
+    try:
+        response = requests.post(url, headers=headers, data=json.dumps(payload))
+        
+        if response.status_code == 200:
+            data = response.json()
+            # استخراج متن جواب
+            if 'choices' in data and len(data['choices']) > 0:
+                return data['choices'][0]['message']['content']
+            else:
+                return "سرم شلوغه... (جواب خالی اومد)"
+        else:
+            # اگر این مدل کار نکرد، ارور میده
+            return f"ارور شبکه: {response.status_code} - {response.text}"
+            
+    except Exception as e:
+        return f"ارور اتصال: {str(e)}"
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
 
-    if not client:
-        await update.message.reply_text("❌ کلید Groq نیست!", reply_to_message_id=update.message.message_id)
+    # چک کردن کلید
+    if not OPENROUTER_API_KEY:
+        await update.message.reply_text("❌ کلید OpenRouter رو بذار تو Railway!", reply_to_message_id=update.message.message_id)
         return
 
     user_text = update.message.text
@@ -102,7 +131,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_name = update.effective_user.first_name if update.effective_user.first_name else "ناشناس"
     
-    # تعیین شخصیت و ساختار پیام
+    # تعیین شخصیت
     if user_id == 5107444649: # خدای تاریکی
         current_system_prompt = PROMPT_DARK_GOD
         display_name = "GOD_OF_DARKNESS (ارباب)"
@@ -136,16 +165,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             context_note = ""
             if "بیشعور" in user_text and role_description == "BISHOOR_MODE":
-                context_note = "(داره اسمت رو صدا میزنه، جواب بده)"
+                context_note = "(داره اسمت رو صدا میزنه)"
             
-            # فرمت کردن پیام برای ارسال به مدل
-            # اینجا خیلی شفاف میگیم که "گوینده" کیه
+            # فرمت پیام
             user_message_formatted = f"""
-            گوینده پیام: {display_name}
-            متن پیام: "{user_text}"
+            گوینده: {display_name}
+            پیام: "{user_text}"
             {context_note}
-            
-            دستور: طبق هویت خودت (که در سیستم گفته شد) به این شخص جواب بده.
+            دستور: طبق هویتت جواب بده.
             """
             
             chat_context[chat_id].append({"role": "user", "content": user_message_formatted})
@@ -155,25 +182,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             messages_to_send = [{"role": "system", "content": current_system_prompt}] + chat_context[chat_id]
 
-            chat_completion = client.chat.completions.create(
-                messages=messages_to_send,
-                model="llama-3.1-8b-instant", 
-                temperature=0.6,
-                top_p=0.9,
-                max_tokens=150,
-            )
-
-            reply_text = chat_completion.choices[0].message.content
+            # ارسال به OpenRouter (مدل گوگل)
+            reply_text = ask_openrouter(messages_to_send)
+            
             chat_context[chat_id].append({"role": "assistant", "content": reply_text})
 
             await update.message.reply_text(reply_text, reply_to_message_id=update.message.message_id)
 
         except Exception as e:
-            error_msg = str(e)
-            if "429" in error_msg:
-                 await update.message.reply_text("😵‍💫 لیمیت پر شد!", reply_to_message_id=update.message.message_id)
-            else:
-                 await update.message.reply_text(f"⚠️ ارور فنی:\n{error_msg}", reply_to_message_id=update.message.message_id)
+            await update.message.reply_text(f"⚠️ ارور عجیب:\n{str(e)}", reply_to_message_id=update.message.message_id)
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
