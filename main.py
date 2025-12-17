@@ -135,4 +135,47 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         try:
             context_note = ""
-            if "بیشعور" in user_text and role_
+            if "بیشعور" in user_text and role_description == "BISHOOR_MODE":
+                context_note = "(داره اسمت رو صدا میزنه، جواب بده)"
+            
+            # فرمت کردن پیام برای ارسال به مدل
+            # اینجا خیلی شفاف میگیم که "گوینده" کیه
+            user_message_formatted = f"""
+            گوینده پیام: {display_name}
+            متن پیام: "{user_text}"
+            {context_note}
+            
+            دستور: طبق هویت خودت (که در سیستم گفته شد) به این شخص جواب بده.
+            """
+            
+            chat_context[chat_id].append({"role": "user", "content": user_message_formatted})
+
+            if len(chat_context[chat_id]) > 6:
+                chat_context[chat_id] = chat_context[chat_id][-6:]
+
+            messages_to_send = [{"role": "system", "content": current_system_prompt}] + chat_context[chat_id]
+
+            chat_completion = client.chat.completions.create(
+                messages=messages_to_send,
+                model="llama-3.1-8b-instant", 
+                temperature=0.6,
+                top_p=0.9,
+                max_tokens=150,
+            )
+
+            reply_text = chat_completion.choices[0].message.content
+            chat_context[chat_id].append({"role": "assistant", "content": reply_text})
+
+            await update.message.reply_text(reply_text, reply_to_message_id=update.message.message_id)
+
+        except Exception as e:
+            error_msg = str(e)
+            if "429" in error_msg:
+                 await update.message.reply_text("😵‍💫 لیمیت پر شد!", reply_to_message_id=update.message.message_id)
+            else:
+                 await update.message.reply_text(f"⚠️ ارور فنی:\n{error_msg}", reply_to_message_id=update.message.message_id)
+
+if __name__ == '__main__':
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
+    app.run_polling()
