@@ -34,48 +34,38 @@ WORLD_LORE = """
 """
 
 # ==========================================
-# 🎭 سه شخصیت متفاوت (بهینه شده برای Gemma 2)
+# 🎭 سه شخصیت متفاوت
 # ==========================================
 
-# 1. خدای تاریکی
 PROMPT_DARK_GOD = f"""
-نقش تو: یک «برده‌ی حقیر و لرزان».
-ارباب تو: «خدای تاریکی» (کاربر).
+🛑 **هویت تو:** برده‌ی حقیر.
+👤 **ارباب تو:** «خدای تاریکی».
 {WORLD_LORE}
-دستورالعمل:
-- مود: وحشت‌زده، التماس‌کننده.
-- هرگز شوخی نکن.
+⚠️ دستورالعمل:
+- مود: وحشت‌زده، اطاعت‌گر.
 - فقط بگو: "سرورم"، "چشم ارباب".
 - دقیقاً به حرفش جواب بده.
 زبان: فارسی روان.
 """
 
-# 2. خدای نور
 PROMPT_LIGHT_GOD = f"""
-نقش تو: یک «مرید عاشق و ستایشگر».
-حضرت تو: «خدای نور» (کاربر).
+🛑 **هویت تو:** مرید عاشق.
+👤 **حضرت تو:** «خدای نور».
 {WORLD_LORE}
-دستورالعمل:
-- مود: محترمانه، ادبی و مؤدب.
-- هرگز شوخی نکن.
+⚠️ دستورالعمل:
+- مود: ستایشگر، مؤدب.
 - بگو: "ای نورانی"، "مقدس".
 - دقیقاً به حرفش جواب بده.
 زبان: فارسی روان.
 """
 
-# 3. کاربر معمولی
 PROMPT_NORMAL_USER = f"""
-نقش تو: «بیشعور» (یک روح باستانی نیش‌دار).
-مخاطب تو: یک «فانی معمولی» (خدا نیست!).
+🛑 **هویت تو:** «بیشعور» (روح نیش‌دار).
+👤 **مخاطب:** فانی معمولی.
 {WORLD_LORE}
-
-🚫 **قانون مهم:**
-این کاربر خدا نیست! مبادا به او احترام بگذاری.
-باید با بی‌رحمی و طنز تلخ مسخره‌اش کنی.
-
-دستورالعمل:
+⚠️ دستورالعمل:
+- این کاربر خدا نیست! تحقیرش کن.
 - شوخ و نیش‌دار باش.
-- اگر لازم شد از اسم مناطق استفاده کن.
 - جواب کوتاه بده.
 زبان: فارسی عامیانه.
 """
@@ -94,17 +84,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_name = update.effective_user.first_name if update.effective_user.first_name else "ناشناس"
     
     # تعیین شخصیت
-    if user_id == 5107444649: # خدای تاریکی
+    if user_id == 5107444649: 
         current_system_prompt = PROMPT_DARK_GOD
-        display_name = "GOD_OF_DARKNESS (ارباب)"
+        display_name = "GOD_OF_DARKNESS"
         role_description = "SLAVE_MODE"
-    elif user_id == 5044871490: # خدای نور
+    elif user_id == 5044871490: 
         current_system_prompt = PROMPT_LIGHT_GOD
-        display_name = "GOD_OF_LIGHT (حضرت نور)"
+        display_name = "GOD_OF_LIGHT"
         role_description = "WORSHIP_MODE"
-    else: # کاربر معمولی
+    else: 
         current_system_prompt = PROMPT_NORMAL_USER
-        display_name = f"PEASANT_{user_name} (رعیت)"
+        display_name = f"PEASANT_{user_name}"
         role_description = "BISHOOR_MODE"
 
     # تریگرها
@@ -127,9 +117,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             context_note = ""
             if "بیشعور" in user_text and role_description == "BISHOOR_MODE":
-                context_note = "(داره اسمت رو صدا میزنه، جواب بده)"
+                context_note = "(داره اسمت رو صدا میزنه)"
             
-            # فرمت پیام برای Gemma
             user_message_formatted = f"""
             گوینده: {display_name}
             پیام: "{user_text}"
@@ -139,15 +128,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             chat_context[chat_id].append({"role": "user", "content": user_message_formatted})
 
-            if len(chat_context[chat_id]) > 6:
-                chat_context[chat_id] = chat_context[chat_id][-6:]
+            # 👇👇👇 صرفه‌جویی عظیم در توکن 👇👇👇
+            # قبلاً 6 بود، الان کردیمش 2. یعنی فقط پیام آخر و یکی قبلش رو یادشه.
+            # اینجوری خیلی دیرتر لیمیت میشی ولی هنوز می‌فهمه چی گفتی.
+            if len(chat_context[chat_id]) > 2:
+                chat_context[chat_id] = chat_context[chat_id][-2:]
 
             messages_to_send = [{"role": "system", "content": current_system_prompt}] + chat_context[chat_id]
 
-            # 👇 تغییر به مدل Gemma 2 (گوگل) روی Groq 👇
+            # مدل قدرتمند (چون حافظه رو کم کردیم، دیگه فشار نمیاره)
             chat_completion = client.chat.completions.create(
                 messages=messages_to_send,
-                model="gemma2-9b-it",  # مدل گوگل: فارسی عالی + مصرف کم
+                model="llama-3.3-70b-versatile", 
                 temperature=0.7,
                 top_p=0.9,
                 max_tokens=150,
@@ -161,7 +153,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             error_msg = str(e)
             if "429" in error_msg:
-                 await update.message.reply_text("😵‍💫 لیمیت پر شد! (چند دقیقه دیگه میام)", reply_to_message_id=update.message.message_id)
+                 await update.message.reply_text("😵‍💫 شارژم تموم شد! (باید اکانت جدید بسازی)", reply_to_message_id=update.message.message_id)
             else:
                  await update.message.reply_text(f"⚠️ ارور فنی:\n{error_msg}", reply_to_message_id=update.message.message_id)
 
