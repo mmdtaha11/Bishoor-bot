@@ -9,8 +9,8 @@ from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filte
 import google.generativeai as genai
 
 # --- تنظیمات توکن‌ها (این‌ها رو مستقیم اینجا بذار یا در محیط سرور ست کن) ---
-TELEGRAM_TOKEN = "توکن_تلگرام_ترا_اینجا_بذار"
-GEMINI_API_KEY = "کلید_جمینای_ترا_اینجا_بذار"
+TELEGRAM_TOKEN = "8262089518:AAGWW1n48E4HhARzFb1YPVW3eFDBQ8LTbTk"
+GEMINI_API_KEY = "AIzaSyCkkiHU9AG9Nv9x53Ws-RA7t-nkObgELl4"
 
 # تنظیم گوگل جمینای
 genai.configure(api_key=GEMINI_API_KEY)
